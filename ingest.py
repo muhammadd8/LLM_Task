@@ -37,13 +37,3 @@ if texts:
         print("Failed to create embeddings.")
 else:
     print("Failed to split documents.")
-
-
-# collection_name="new_db"
-# qdrant = QdrantClient("localhost", port=6333)
-
-# # Store document vectors in Qdrant
-# for idx, text in enumerate(texts):
-#     # Assuming each document is processed individually, you can modify this part based on your needs
-#     vector = embeddings.embed_documents(text)
-#     qdrant.upsert_vector(collection_name, str(idx), vector)

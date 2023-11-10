@@ -2,6 +2,18 @@ from langchain.vectorstores import Qdrant
 from langchain.embeddings import HuggingFaceBgeEmbeddings
 from langchain.document_loaders import PyPDFLoader
 import os
+from langchain import PromptTemplate
+from langchain.embeddings import HuggingFaceEmbeddings#to get embeddings
+from langchain.vectorstores import Qdrant #vector database
+from qdrant_client import QdrantClient
+from langchain.llms import CTransformers#to get llm 
+from langchain.text_splitter import RecursiveCharacterTextSplitter#splitting text into chunks
+from langchain.chains import RetrievalQA#building Retrieval chain
+from langchain.document_loaders import PyPDFLoader,  UnstructuredURLLoader #to read pdfs, urls
+
+
+qdrant_url = "https://fc211df0-0c5f-4f4f-8132-61b0e6d206b7.us-east4-0.gcp.cloud.qdrant.io"
+qdrant_api_key = "LbFjrbBsZgAaEdfpPtusjDfFpcdadiM2CWubWJdTV6CSacoQ9IxVpw"
 
 def split_documents(documents, text_splitter):
     try:
@@ -69,3 +81,61 @@ def create_qdrant(texts, embeddings, url, prefer_grpc=False, collection_name="ne
         print(f"Error: Unable to create Qdrant - {e}")
         return None
     
+def load_llm():
+    # Load the locally downloaded model here
+    llm = CTransformers(
+        model = "TheBloke/Llama-2-7B-Chat-GGML",
+        model_type="llama",
+        temperature = 0.2
+        )
+    return llm
+
+
+# a custom prompt help us to assist our agent with better answer and make sure to not make up answers
+custom_prompt_template = """Use the following pieces of information to answer the user’s question.
+If you don’t know the answer, just say that you don’t know, don’t try to make up an answer.
+
+Context: {context}
+Question: {question}
+
+Only return the helpful answer below and nothing else.
+Helpful and Caring answer:
+"""
+
+prompt = PromptTemplate(template=custom_prompt_template,
+                            input_variables=['context', 'question'])
+
+def qa_bot_qdrant_response(context):
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2",
+                                       model_kwargs={'device': 'cpu'})
+    #connect to the vector database
+    client = QdrantClient(url=qdrant_url,api_key=qdrant_api_key)
+    
+    doc_store = Qdrant(
+        client=client,
+        collection_name="my_documents_new",
+        embeddings=embeddings)
+
+    llm = load_llm()
+    qa = RetrievalQA.from_chain_type(llm=llm,
+                                       chain_type='stuff',
+                                       retriever=doc_store.as_retriever(search_kwargs={'k': 2}),
+                                       return_source_documents=True,
+                                       chain_type_kwargs={'prompt': prompt}
+                                       )
+
+    response = qa({'query': context})
+
+    return response
+
+class ConversationManager:
+    def __init__(self):
+        self.context = ""  # Initialize empty context for the conversation
+
+    def update_context(self, new_context):
+        self.context += " " + new_context  # Append new context to the existing context
+
+    def get_response(self, query):
+        self.update_context(query)  # Add the user's query to the conversation context
+        response = qa_bot_qdrant_response(query)
+        return response
